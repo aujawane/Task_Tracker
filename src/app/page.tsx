@@ -99,7 +99,10 @@ function SortableTaskItem({ task, categories, toggleTask, deleteTask, togglePin 
           )}
           <span
             className="text-[10px] md:text-xs px-2 py-0.5 rounded-md font-bold uppercase tracking-wider"
-            style={{ backgroundColor: getCategoryColor(task.category as any) + "15", color: getCategoryColor(task.category as any) }}
+            style={{ 
+              backgroundColor: (categories.find(c => c.value === task.category)?.color || "#6b7280") + "15", 
+              color: categories.find(c => c.value === task.category)?.color || "#6b7280" 
+            }}
           >
             {categories.find(c => c.value === task.category)?.label || task.category}
           </span>
@@ -292,9 +295,12 @@ export default function Home() {
       <header className="fixed top-0 left-0 right-0 z-40 bg-[var(--surface)]/80 backdrop-blur-md border-b border-[var(--border)] px-4 md:px-6 py-3 md:py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-[var(--text-primary)] leading-tight"><span className="text-[#FA7315]">Adi</span> Task</h1>
+            <h1 className="text-xl md:text-2xl font-black text-[var(--primary)] leading-tight italic">
+              Adi<span className="text-white">Task</span>
+            </h1>
             <p className="hidden md:block text-xs text-[var(--text-secondary)]">Welcome, {user.name}</p>
           </div>
+
           <div className="flex items-center gap-2 md:gap-4">
             <div className="hidden sm:flex items-center gap-3 text-sm font-semibold">
               <span className="text-[var(--success)] bg-[var(--success)]/10 px-2 py-1 rounded-lg">

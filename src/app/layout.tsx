@@ -11,7 +11,7 @@ const outfit = Outfit({
 
 export const metadata: Metadata = {
   title: "AdiTask",
-  description: "A clean task management app",
+  description: "A clean and powerful task management app",
 };
 
 export default function RootLayout({
