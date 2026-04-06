@@ -84,8 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const foundUser = users.find((u) => u.email === normalizedEmail);
     if (foundUser) {
-      setUser(foundUser);
-      saveData(users, foundUser);
+      const userWithCategories = { ...foundUser, categories: foundUser.categories || [] };
+      setUser(userWithCategories);
+      saveData(users, userWithCategories);
       setError("");
       return true;
     }
@@ -146,7 +147,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addCategory = (category: Category) => {
     if (!user) return;
-    const updatedUser = { ...user, categories: [...user.categories, category] };
+    const currentCategories = user.categories || [];
+    const updatedUser = { ...user, categories: [...currentCategories, category] };
     const updatedUsers = users.map((u) =>
       u.id === user.id ? updatedUser : u
     );

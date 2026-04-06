@@ -5,6 +5,7 @@ export interface Task {
   dueDate: string | null;
   completed: boolean;
   createdAt: string;
+  pinned?: boolean;
 }
 
 export const getCategoryColor = (category: string): string => {

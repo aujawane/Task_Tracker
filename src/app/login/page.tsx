@@ -113,35 +113,38 @@ export default function LoginPage() {
                   </div>
 
                   {/* Add category input */}
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newCategoryName}
-                      onChange={e => setNewCategoryName(e.target.value)}
-                      placeholder="Category name..."
-                      className="flex-1 bg-[var(--background)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--primary)] transition-colors"
-                      onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addCategory())}
-                    />
-                    <div className="flex gap-1">
-                      {CATEGORY_COLORS.slice(0, 5).map(color => (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newCategoryName}
+                        onChange={e => setNewCategoryName(e.target.value)}
+                        placeholder="Category name..."
+                        className="flex-1 bg-[var(--background)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--primary)] transition-colors"
+                        onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addCategory())}
+                      />
+                      <button
+                        type="button"
+                        onClick={addCategory}
+                        className="px-4 py-2.5 bg-[var(--primary)]/10 rounded-lg text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-all duration-200"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-bold mr-1 flex-shrink-0">Pick Color</span>
+                      {CATEGORY_COLORS.map(color => (
                         <button
                           key={color}
                           type="button"
                           onClick={() => setNewCategoryColor(color)}
-                          className={`w-6 h-6 rounded-full transition-transform ${newCategoryColor === color ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[var(--surface)]" : ""}`}
+                          className={`w-7 h-7 rounded-full flex-shrink-0 transition-all duration-200 ${newCategoryColor === color ? "ring-2 ring-white ring-offset-2 ring-offset-[var(--surface)] scale-110" : "hover:scale-105"}`}
                           style={{ backgroundColor: color }}
                         />
                       ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={addCategory}
-                      className="px-3 py-2 bg-[var(--surface-hover)] rounded-lg text-[var(--text-secondary)] hover:text-[var(--primary)] transition-colors"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </button>
                   </div>
                 </div>
               </>
