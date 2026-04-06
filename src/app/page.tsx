@@ -146,7 +146,7 @@ function SortableTaskItem({ task, categories, toggleTask, deleteTask, togglePin 
 }
 
 export default function Home() {
-  const { user, logout, addCategory } = useAuth();
+  const { user, logout, addCategory, removeCategory } = useAuth();
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -267,6 +267,16 @@ export default function Home() {
     setShowAddCategory(false);
   };
 
+  const handleRemoveCategory = (e: React.MouseEvent, catValue: string) => {
+    e.stopPropagation();
+    if (!user) return;
+    
+    removeCategory(catValue);
+    if (filterCategory === catValue) {
+      setFilterCategory("all");
+    }
+  };
+
   const filteredTasks = tasks
     .filter(task => {
       if (filterCategory !== "all" && task.category !== filterCategory) return false;
@@ -342,18 +352,30 @@ export default function Home() {
               All Tasks
             </button>
             {categories.map(cat => (
-              <button
-                key={cat.value}
-                onClick={() => setFilterCategory(cat.value)}
-                className="whitespace-nowrap px-3.5 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex-shrink-0"
-                style={{
-                  backgroundColor: cat.color + (filterCategory === cat.value ? "25" : "10"),
-                  color: cat.color,
-                  boxShadow: filterCategory === cat.value ? `inset 0 0 0 1.5px ${cat.color}80` : "none",
-                }}
-              >
-                {cat.label}
-              </button>
+              <div key={cat.value} className="relative group/cat flex-shrink-0">
+                <button
+                  onClick={() => setFilterCategory(cat.value)}
+                  className="whitespace-nowrap px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"
+                  style={{
+                    backgroundColor: cat.color + (filterCategory === cat.value ? "25" : "10"),
+                    color: cat.color,
+                    boxShadow: filterCategory === cat.value ? `inset 0 0 0 1.5px ${cat.color}80` : "none",
+                    paddingRight: "2.25rem" // Space for the x
+                  }}
+                >
+                  {cat.label}
+                </button>
+                <button
+                  onClick={(e) => handleRemoveCategory(e, cat.value)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-black/10 transition-colors"
+                  style={{ color: cat.color }}
+                  title="Remove category"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             ))}
             <button
               onClick={() => setShowAddCategory(true)}

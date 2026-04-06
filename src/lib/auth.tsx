@@ -24,6 +24,7 @@ interface AuthContextType {
   error: string;
   setError: (error: string) => void;
   addCategory: (category: Category) => void;
+  removeCategory: (categoryValue: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -157,6 +158,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveData(updatedUsers, updatedUser);
   };
 
+  const removeCategory = (categoryValue: string) => {
+    if (!user) return;
+    const updatedCategories = user.categories.filter((c) => c.value !== categoryValue);
+
+    const updatedUser = { ...user, categories: updatedCategories };
+    const updatedUsers = users.map((u) =>
+      u.id === user.id ? updatedUser : u
+    );
+    setUser(updatedUser);
+    setUsers(updatedUsers);
+    saveData(updatedUsers, updatedUser);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -168,6 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error,
         setError,
         addCategory,
+        removeCategory,
       }}
     >
       {children}
