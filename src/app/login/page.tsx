@@ -66,7 +66,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-2">Task Tracker</h1>
+          <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-2"><span className="text-[#FA7315]">Adi</span> Task</h1>
           <p className="text-[var(--text-secondary)]">
             {isLogin ? "Sign in to your account" : "Create your account"}
           </p>
