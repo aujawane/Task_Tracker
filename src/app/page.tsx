@@ -4,6 +4,8 @@ import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, Category } from "@/lib/auth";
 import { Task, getCategoryColor } from "@/lib/types";
+import { supabase } from "@/lib/supabase";
+import ClockWheel from "@/components/ClockWheel";
 import {
   DndContext,
   closestCenter,
@@ -30,9 +32,10 @@ interface SortableTaskItemProps {
   toggleTask: (id: string) => void;
   deleteTask: (id: string) => void;
   togglePin: (id: string) => void;
+  updateTaskDeadline: (id: string, newTime: string) => void;
 }
 
-function SortableTaskItem({ task, categories, toggleTask, deleteTask, togglePin }: SortableTaskItemProps) {
+function SortableTaskItem({ task, categories, toggleTask, deleteTask, togglePin, updateTaskDeadline }: SortableTaskItemProps) {
   const {
     attributes,
     listeners,
@@ -46,6 +49,12 @@ function SortableTaskItem({ task, categories, toggleTask, deleteTask, togglePin 
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 50 : "auto",
+  };
+
+  const getDueTime = () => {
+    if (!task.dueDate) return "23:59";
+    const date = new Date(task.dueDate);
+    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
   };
 
   return (
@@ -117,6 +126,15 @@ function SortableTaskItem({ task, categories, toggleTask, deleteTask, togglePin 
         </div>
       </div>
 
+      {/* Time Wheel / Deadline */}
+      <div className="w-28 md:w-32 flex-shrink-0">
+        <ClockWheel
+          value={getDueTime()}
+          onChange={(time) => updateTaskDeadline(task.id, time)}
+          showLabel={false}
+        />
+      </div>
+
       {/* Actions */}
       <div className="flex items-center">
         <button
@@ -146,13 +164,19 @@ function SortableTaskItem({ task, categories, toggleTask, deleteTask, togglePin 
 }
 
 export default function Home() {
-  const { user, logout, addCategory, removeCategory } = useAuth();
+  const { user, loading: authLoading, logout, addCategory, removeCategory } = useAuth();
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "completed">("all");
-  const [newTask, setNewTask] = useState({ title: "", category: "", dueDate: "" });
+  const [newTask, setNewTask] = useState({ 
+    title: "", 
+    category: "", 
+    dueDate: new Date().toISOString().split('T')[0], 
+    dueTime: "23:59" 
+  });
   const [error, setError] = useState("");
   const [isClient, setIsClient] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -193,29 +217,40 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!user) {
+    if (!authLoading && !user) {
       router.push("/login");
     }
-  }, [user, router]);
+  }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (!user || !isClient) return;
-    const userKey = `${STORAGE_KEY}-${user.id}`;
-    const stored = localStorage.getItem(userKey);
-    if (stored) {
-      try {
-        setTasks(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem(userKey);
+    if (!user) return;
+
+    const fetchTasks = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (data) {
+        setTasks(data.map(t => ({
+          id: t.id,
+          title: t.title,
+          category: t.category,
+          dueDate: t.due_date,
+          completed: t.completed,
+          createdAt: t.created_at,
+          pinned: t.pinned,
+        })));
+      } else if (error) {
+        console.error("Error fetching tasks:", error);
       }
-    }
-  }, [user, isClient]);
+      setLoading(false);
+    };
 
-  useEffect(() => {
-    if (!user || !isClient) return;
-    const userKey = `${STORAGE_KEY}-${user.id}`;
-    localStorage.setItem(userKey, JSON.stringify(tasks));
-  }, [tasks, user, isClient]);
+    fetchTasks();
+  }, [user]);
 
   useEffect(() => {
     if (user?.categories?.length && !newTask.category) {
@@ -223,7 +258,7 @@ export default function Home() {
     }
   }, [user, newTask.category]);
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTask.title.trim()) {
       setError("Task title is required");
       return;
@@ -232,46 +267,124 @@ export default function Home() {
       setError("Select a category");
       return;
     }
-    const task: Task = {
-      id: Date.now().toString(),
-      title: newTask.title.trim(),
-      category: newTask.category,
-      dueDate: newTask.dueDate || null,
-      completed: false,
-      createdAt: new Date().toISOString(),
-    };
-    setTasks([task, ...tasks]);
-    setNewTask({ title: "", category: user?.categories[0]?.value || "", dueDate: "" });
-    setError("");
-    setShowModal(false);
+    if (!user) return;
+
+    const dueDateStr = `${newTask.dueDate || new Date().toISOString().split('T')[0]}T${newTask.dueTime || "23:59"}:00`;
+
+    const { data, error: insertError } = await supabase
+      .from("tasks")
+      .insert({
+        title: newTask.title.trim(),
+        category: newTask.category,
+        due_date: dueDateStr,
+        user_id: user.id,
+      })
+      .select()
+      .single();
+
+    if (data) {
+      const task: Task = {
+        id: data.id,
+        title: data.title,
+        category: data.category,
+        dueDate: data.due_date,
+        completed: data.completed,
+        createdAt: data.created_at,
+        pinned: data.pinned,
+      };
+      setTasks([task, ...tasks]);
+      setNewTask({ 
+        title: "", 
+        category: user?.categories[0]?.value || "", 
+        dueDate: new Date().toISOString().split('T')[0], 
+        dueTime: "23:59" 
+      });
+      setError("");
+      setShowModal(false);
+    } else if (insertError) {
+      console.error("Error adding task:", insertError);
+      setError("Failed to add task to database");
+    }
   };
 
-  const toggleTask = (id: string) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  const toggleTask = async (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    const { error } = await supabase
+      .from("tasks")
+      .update({ completed: !task.completed })
+      .eq("id", id);
+
+    if (!error) {
+      setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+    } else {
+      console.error("Error toggling task:", error);
+    }
   };
 
-  const togglePin = (id: string) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, pinned: !t.pinned } : t));
+  const togglePin = async (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    const { error } = await supabase
+      .from("tasks")
+      .update({ pinned: !task.pinned })
+      .eq("id", id);
+
+    if (!error) {
+      setTasks(tasks.map(t => t.id === id ? { ...t, pinned: !t.pinned } : t));
+    } else {
+      console.error("Error toggling pin:", error);
+    }
   };
 
-  const deleteTask = (id: string) => {
-    setTasks(tasks.filter(t => t.id !== id));
+  const deleteTask = async (id: string) => {
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", id);
+
+    if (!error) {
+      setTasks(tasks.filter(t => t.id !== id));
+    } else {
+      console.error("Error deleting task:", error);
+    }
   };
 
-  const handleAddCategory = () => {
+  const updateTaskDeadline = async (id: string, newTime: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    const currentDate = task.dueDate ? task.dueDate.split('T')[0] : new Date().toISOString().split('T')[0];
+    const newDueDate = `${currentDate}T${newTime}:00`;
+
+    const { error } = await supabase
+      .from("tasks")
+      .update({ due_date: newDueDate })
+      .eq("id", id);
+
+    if (!error) {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, dueDate: newDueDate } : t));
+    } else {
+      console.error("Error updating deadline:", error);
+    }
+  };
+
+  const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
     const value = newCategoryName.trim().toLowerCase().replace(/\s+/g, "-");
-    addCategory({ value, label: newCategoryName.trim(), color: newCategoryColor });
+    await addCategory({ value, label: newCategoryName.trim(), color: newCategoryColor });
     setNewCategoryName("");
     setNewCategoryColor(CATEGORY_COLORS[Math.floor(Math.random() * CATEGORY_COLORS.length)]);
     setShowAddCategory(false);
   };
 
-  const handleRemoveCategory = (e: React.MouseEvent, catValue: string) => {
+  const handleRemoveCategory = async (e: React.MouseEvent, catValue: string) => {
     e.stopPropagation();
     if (!user) return;
     
-    removeCategory(catValue);
+    await removeCategory(catValue);
     if (filterCategory === catValue) {
       setFilterCategory("all");
     }
@@ -292,6 +405,17 @@ export default function Home() {
 
   const activeCount = tasks.filter(t => !t.completed).length;
   const completedCount = tasks.filter(t => t.completed).length;
+
+  if (authLoading || (user && loading)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-[var(--text-secondary)] font-medium animate-pulse">Loading AdiTask...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return null;
@@ -440,6 +564,7 @@ export default function Home() {
                     toggleTask={toggleTask}
                     deleteTask={deleteTask}
                     togglePin={togglePin}
+                    updateTaskDeadline={updateTaskDeadline}
                   />
                 ))}
               </div>
@@ -493,20 +618,37 @@ export default function Home() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Due Date</label>
-                <input
-                  type="date"
-                  value={newTask.dueDate}
-                  onChange={e => setNewTask({ ...newTask, dueDate: e.target.value })}
-                  className="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-4 py-2.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--primary)] transition-colors"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Due Date</label>
+                  <input
+                    type="date"
+                    value={newTask.dueDate}
+                    onChange={e => setNewTask({ ...newTask, dueDate: e.target.value })}
+                    className="w-full bg-[var(--background)] border border-[var(--border)] rounded-lg px-4 py-2.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--primary)] transition-colors"
+                  />
+                </div>
+                <div>
+                  <ClockWheel
+                    value={newTask.dueTime}
+                    onChange={(time) => setNewTask({ ...newTask, dueTime: time })}
+                  />
+                </div>
               </div>
             </div>
 
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => { setShowModal(false); setError(""); setNewTask({ title: "", category: categories[0]?.value || "", dueDate: "" }); }}
+                onClick={() => { 
+                  setShowModal(false); 
+                  setError(""); 
+                  setNewTask({ 
+                    title: "", 
+                    category: categories[0]?.value || "", 
+                    dueDate: new Date().toISOString().split('T')[0], 
+                    dueTime: "23:59" 
+                  }); 
+                }}
                 className="flex-1 px-4 py-2.5 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-colors"
               >
                 Cancel

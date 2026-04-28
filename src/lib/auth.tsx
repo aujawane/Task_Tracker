@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { supabase } from "./supabase";
 
 export interface Category {
   value: string;
@@ -17,14 +18,14 @@ export interface User {
 
 interface AuthContextType {
   user: User | null;
-  users: User[];
-  login: (email: string, password: string) => boolean;
-  register: (name: string, email: string, password: string, categories: Category[]) => boolean;
-  logout: () => void;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (name: string, email: string, password: string, categories: Category[]) => Promise<boolean>;
+  logout: () => Promise<void>;
   error: string;
   setError: (error: string) => void;
-  addCategory: (category: Category) => void;
-  removeCategory: (categoryValue: string) => void;
+  addCategory: (category: Category) => Promise<void>;
+  removeCategory: (categoryValue: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -37,145 +38,162 @@ const DEFAULT_CATEGORIES: Category[] = [
   { value: "other", label: "Other", color: "#6b7280" },
 ];
 
-const USERS_KEY = "task-tracker-users";
-const PASSWORDS_KEY = "task-tracker-passwords";
-const CURRENT_USER_KEY = "task-tracker-current-user";
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const storedUsers = localStorage.getItem(USERS_KEY);
-    const storedCurrentUser = localStorage.getItem(CURRENT_USER_KEY);
-
-    if (storedUsers) {
-      setUsers(JSON.parse(storedUsers));
-    }
-
-    if (storedCurrentUser) {
-      try {
-        const currentUser = JSON.parse(storedCurrentUser);
-        setUser(currentUser);
-      } catch {
-        localStorage.removeItem(CURRENT_USER_KEY);
+    // Check active sessions and sets the user
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await fetchProfile(session.user.id);
       }
-    }
+      setLoading(false);
+    };
+
+    checkUser();
+
+    // Listen for changes on auth state (logged in, signed out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        await fetchProfile(session.user.id);
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const saveData = (newUsers: User[], newCurrentUser: User | null) => {
-    localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
-    if (newCurrentUser) {
-      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newCurrentUser));
-    } else {
-      localStorage.removeItem(CURRENT_USER_KEY);
+  const fetchProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (data) {
+      setUser({
+        id: data.id,
+        email: data.email,
+        name: data.name || "",
+        categories: data.categories || [],
+      });
+    } else if (error) {
+      console.error("Error fetching profile:", error);
     }
   };
 
-  const login = (email: string, password: string): boolean => {
-    const storedPasswords = localStorage.getItem(PASSWORDS_KEY);
-    const passwords: Record<string, string> = storedPasswords ? JSON.parse(storedPasswords) : {};
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    const normalizedEmail = email.toLowerCase().trim();
-    if (passwords[normalizedEmail] !== password) {
-      setError("Invalid email or password");
-      return false;
-    }
+      if (error) {
+        setError(error.message);
+        return false;
+      }
 
-    const foundUser = users.find((u) => u.email === normalizedEmail);
-    if (foundUser) {
-      const userWithCategories = { ...foundUser, categories: foundUser.categories || [] };
-      setUser(userWithCategories);
-      saveData(users, userWithCategories);
       setError("");
       return true;
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred");
+      return false;
     }
-
-    setError("User not found");
-    return false;
   };
 
-  const register = (
+  const register = async (
     name: string,
     email: string,
     password: string,
     categories: Category[]
-  ): boolean => {
-    const normalizedEmail = email.toLowerCase().trim();
+  ): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name: name.trim(),
+          },
+        },
+      });
 
-    if (users.some((u) => u.email === normalizedEmail)) {
-      setError("Email already registered");
+      if (error) {
+        setError(error.message);
+        return false;
+      }
+
+      if (data.user) {
+        // Categories are handled by the database trigger creating the profile, 
+        // but we might want to update them immediately if we want specific categories on signup
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({ categories })
+          .eq("id", data.user.id);
+        
+        if (profileError) {
+          console.error("Error setting initial categories:", profileError);
+        }
+      }
+
+      setError("");
+      return true;
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred");
       return false;
     }
-
-    if (!name.trim() || !password) {
-      setError("Name and password are required");
-      return false;
-    }
-
-    if (categories.length === 0) {
-      setError("Add at least one category");
-      return false;
-    }
-
-    const newUser: User = {
-      id: Date.now().toString(),
-      email: normalizedEmail,
-      name: name.trim(),
-      categories,
-    };
-
-    const newUsers = [...users, newUser];
-    const storedPasswords = localStorage.getItem(PASSWORDS_KEY);
-    const passwords: Record<string, string> = storedPasswords
-      ? JSON.parse(storedPasswords)
-      : {};
-    passwords[normalizedEmail] = password;
-
-    setUsers(newUsers);
-    setUser(newUser);
-    localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
-    saveData(newUsers, newUser);
-    setError("");
-    return true;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    saveData(users, null);
   };
 
-  const addCategory = (category: Category) => {
+  const addCategory = async (category: Category) => {
     if (!user) return;
-    const currentCategories = user.categories || [];
-    const updatedUser = { ...user, categories: [...currentCategories, category] };
-    const updatedUsers = users.map((u) =>
-      u.id === user.id ? updatedUser : u
-    );
-    setUser(updatedUser);
-    setUsers(updatedUsers);
-    saveData(updatedUsers, updatedUser);
+    const updatedCategories = [...user.categories, category];
+    
+    const { error } = await supabase
+      .from("profiles")
+      .update({ categories: updatedCategories })
+      .eq("id", user.id);
+
+    if (error) {
+      console.error("Error adding category:", error);
+      setError("Failed to add category");
+    } else {
+      setUser({ ...user, categories: updatedCategories });
+    }
   };
 
-  const removeCategory = (categoryValue: string) => {
+  const removeCategory = async (categoryValue: string) => {
     if (!user) return;
     const updatedCategories = user.categories.filter((c) => c.value !== categoryValue);
 
-    const updatedUser = { ...user, categories: updatedCategories };
-    const updatedUsers = users.map((u) =>
-      u.id === user.id ? updatedUser : u
-    );
-    setUser(updatedUser);
-    setUsers(updatedUsers);
-    saveData(updatedUsers, updatedUser);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ categories: updatedCategories })
+      .eq("id", user.id);
+
+    if (error) {
+      console.error("Error removing category:", error);
+      setError("Failed to remove category");
+    } else {
+      setUser({ ...user, categories: updatedCategories });
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        users,
+        loading,
         login,
         register,
         logout,
